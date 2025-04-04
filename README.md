@@ -21,10 +21,10 @@ More detailed description can be found in the file _POC.pdf_ in the Proof of Con
 
 ## Formal verification
 
-Formal verification of the protocol is done by using ProVerif tool. We provide two codes for the model of the protocol:
+Formal verification of the protocol is done by using the ProVerif tool. We provide two codes for the model of the protocol:
 
 - **Ecoupon.pv:** Proving the secrecy and authentication.
-- **Ecoupon.pv:** Proving observational equivalence.
+- **EcouponObsEq.pv:** Proving observational equivalence.
 
    
 ## ProVerif
