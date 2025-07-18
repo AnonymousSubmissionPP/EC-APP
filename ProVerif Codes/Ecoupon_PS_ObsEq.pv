@@ -1,0 +1,320 @@
+free AliceIssuer:channel.
+free AlicePSM:channel.
+free AlicePSS:channel.
+free IssuerPSM:channel[private].
+free IssuerPSS:channel[private].
+free IssuerShop:channel[private].
+free AliceShop:channel[private].
+free internet:channel.
+    
+type host.
+type coins.
+type key.
+type pkey.
+type skey.
+type sskey.
+type spkey.
+
+const Discount:bitstring[private].
+const atMall:bitstring.
+const atShop:bitstring.
+
+(*Hash*)
+fun hash(bitstring,bitstring):bitstring. (*compute ecoupon*)
+fun Hash(bitstring):bitstring. (*compute ecoupons for Shop storage*)
+
+(*certification*)
+fun spk(sskey):spkey. (*public key derivation for the secret key*)
+fun makecert(host,pkey,sskey):bitstring.
+reduc forall x:host, y:pkey, z:sskey; checkCert(makecert(x,y,z),spk(z))=(x,y).
+
+(*public key encryption*)
+fun pk(skey):pkey. (*public key derivation for the secret key*)
+fun aenc(bitstring,pkey):bitstring. (*asymmetric encryption with inputs plaintext and key and outputs ciphertext*)
+reduc forall m:bitstring,k:skey; adec(aenc(m,pk(k)),k)=m. (*asymmetric decryption with inputs ciphertext and secret key and outputs plaintext*)
+
+fun aencK(key,pkey):bitstring. (*asymmetric encryption with inputs plaintext and key and outputs ciphertext*)
+reduc forall m:key,k:skey; adecK(aencK(m,pk(k)),k)=m. (*asymmetric decryption with inputs ciphertext and secret key and outputs plaintext*)
+
+(*AEAD*) (*Encrypt-then-mac*)
+fun internal_senc(bitstring,key,coins):bitstring.
+reduc forall m:bitstring,k:key,r:coins; sdec(internal_senc(m,k,r),k)=m.
+letfun senc(m:bitstring,k:key)=new r:coins; internal_senc(m,k,r).
+
+(*symmetric encryption*)
+fun symenc(bitstring,bitstring):bitstring.
+reduc forall m:bitstring,n:bitstring; symdec(symenc(m,n),n)=m.
+
+
+free nonce_first:bitstring[private].
+free nonce_second:bitstring[private].
+free nonce_ecoupon:bitstring[private].
+
+
+(*Events*)
+event AliceBegin(host,bitstring).
+event AliceAccept(host,key).
+event AliceReceiveFH(host,bitstring).
+event AliceGotFH(host,bitstring).
+
+event PSMbegin(host,bitstring).
+event PSMReceiveEK(host,bitstring).
+event PSMfinish(host,bitstring).
+event PSMfinish2(host,key).
+
+event AliceReceiveCert(host,bitstring).
+event AliceSendM1M2(host,bitstring).
+
+event IssuerBegin(host,bitstring).
+event IssuerGotK2(host,key).
+event IssuerReceiveFH(host,bitstring).
+event IssuerFinish(host,bitstring).
+event IssuerFinish2(host,bitstring).
+
+event AliceReceiveM3(host,bitstring).
+event AliceReceiveSH(host,bitstring).
+event AliceGotCoupon(host,bitstring).
+
+event PSSbegin(host,bitstring).
+event PSSM1M2(host,bitstring).
+event PSSfinish(host,bitstring).
+event PSSfinish2(host,bitstring).
+
+event ShopReceiveEcoupon(host,bitstring).
+event ShopSuccess(host,bitstring).
+event ShopFinish(host,bitstring).
+
+event AliceFinish(host,bitstring).
+
+
+(* Reachability *)
+(* query x:host,y:bitstring; event(AliceBegin(x,y)).
+query x:host,y:key; event(AliceAccept(x,y)).
+query x:host,y:bitstring; event(AliceReceiveFH(x,y)).
+query x:host,y:bitstring; event(AliceGotFH(x,y)).
+
+query x:host,y:bitstring; event(PSMbegin(x,y)).
+query x:host,y:bitstring; event(PSMReceiveEK(x,y)).
+query x:host,y:key; event(PSMfinish2(x,y)).
+query x:host,y:bitstring; event(PSMfinish(x,y)).
+
+query x:host,y:bitstring; event(AliceReceiveCert(x,y)).
+query x:host,y:bitstring; event(AliceSendM1M2(x,y)).
+
+query x:host,y:bitstring; event(IssuerBegin(x,y)).
+query x:host,y:key; event(IssuerGotK2(x,y)).
+query x:host,y:bitstring; event(IssuerReceiveFH(x,y)).
+query x:host,y:bitstring; event(IssuerFinish(x,y)).
+query x:host,y:bitstring; event(IssuerFinish2(x,y)).
+
+query x:host,y:bitstring; event(AliceReceiveM3(x,y)).
+query x:host,y:bitstring; event(AliceReceiveSH(x,y)).
+query x:host,y:bitstring; event(AliceGotCoupon(x,y)).
+
+query x:host,y:bitstring; event(PSSbegin(x,y)).
+query x:host,y:bitstring; event(PSSM1M2(x,y)).
+query x:host,y:bitstring; event(PSSfinish(x,y)).
+query x:host,y:bitstring; event(PSSfinish2(x,y)).
+
+query x:host,y:bitstring; event(ShopReceiveEcoupon(x,y)).
+query x:host,y:bitstring; event(ShopSuccess(x,y)).
+query x:host,y:bitstring; event(ShopFinish(x,y)).
+
+query x:host,y:bitstring; event(AliceFinish(x,y)). *)
+ 
+
+
+let processAlice(Alice:host,pkCA:spkey)=
+
+(*Alice near Mall*)
+    out(AlicePSM,atMall);
+(*Step 1*)
+    in(AlicePSM,certPSM:bitstring);
+    event AliceBegin(Alice,certPSM);
+
+(*Step 2*)
+    let (PSM:host,pkPSM:pkey)=checkCert(certPSM,pkCA) in
+    new K1:key;
+
+    let EK=aencK(K1,pkPSM) in
+(*Step 3*)
+    event AliceAccept(Alice,K1);
+    out(AlicePSM,EK);
+
+(*Step 5*)
+    in(AlicePSM,EFH:bitstring);
+    event AliceReceiveFH(Alice,EFH);
+
+(*Step 6*)
+    let firsthalf=sdec(EFH,K1) in
+    event AliceGotFH(Alice,firsthalf);
+
+(*------*)
+
+(*Alice near Shop*)
+    out(AlicePSS,atShop);
+
+(*Step 7*)
+    in(AlicePSS,certIssuer:bitstring);
+    event AliceReceiveCert(Alice,certIssuer);
+
+    let (Issuer:host,pkI:pkey)=checkCert(certIssuer,pkCA) in
+
+(*Step 8*)
+    new K2:key;
+    let M1=aencK((K2),pkI) in
+    let M2=senc(firsthalf,K2) in
+
+(*Step 9*)
+    event AliceSendM1M2(Alice,(M1,M2));
+    out(AlicePSS,(M1,M2));
+
+(*-----*)
+
+(*Step 13*)
+    in(AlicePSS, (M3:bitstring));
+
+(*Step 14*)
+    let (=firsthalf,secondhalf:bitstring)=sdec(M3,K2) in
+    event AliceReceiveSH(Alice,secondhalf);
+    event AliceReceiveM3(Alice,(M3));
+
+    let Ecoupon=hash(firsthalf,secondhalf) in
+    event AliceGotCoupon(Alice,Ecoupon);
+
+(*Step 15*)
+    out(AliceShop,Ecoupon);
+
+(*Step 17*)
+    in(AliceShop,(=Ecoupon,=Discount));
+    event AliceFinish(Alice,Ecoupon);
+    out(internet,symenc(nonce_first,firsthalf));
+    out(internet,symenc(nonce_second,secondhalf));
+    out(internet,symenc(nonce_ecoupon,Ecoupon)).
+
+
+let processIssuer(Issuer:host,skI:skey,certIssuer:bitstring,firsthalf:bitstring,secondhalf:bitstring)=
+
+    let ecoupon=hash(firsthalf,secondhalf) in
+    let H_Ecoupon=Hash(ecoupon) in
+    out(IssuerPSM,firsthalf);
+    out(IssuerShop,H_Ecoupon);
+
+(*Step 10*)
+    in(IssuerPSS,(M1:bitstring,M2:bitstring));
+    event IssuerBegin(Issuer,(M1,M2));
+
+(*Step 11*)
+    let (K2:key)=adecK(M1,skI) in
+    event IssuerGotK2(Issuer,K2);
+    let (firsthalf_rec:bitstring)=sdec(M2,K2) in
+    if firsthalf_rec=firsthalf then
+    event IssuerReceiveFH(Issuer,M1);
+   
+    let M3=senc((firsthalf,secondhalf),K2) in
+
+(*Step 12*)
+    event IssuerFinish2(Issuer,(M1,M2));
+    event IssuerFinish(Issuer,(hash(firsthalf,secondhalf)));
+    out(IssuerPSS,(M1,M2,M3)).
+
+
+let processPSM(PSM:host,skPSM:skey,certPSM:bitstring)=
+
+in(IssuerPSM,firsthalf:bitstring);
+
+    in(AlicePSM,=atMall);
+(*Step 1-3*)    
+(*Assumption: Alice accepts the notification*)
+    event PSMbegin(PSM,certPSM); 
+    out(AlicePSM,(certPSM));
+
+(*3*)
+    in(AlicePSM,EK:bitstring);
+    event PSMReceiveEK(PSM,EK);
+
+(*4*)
+    let (K1:key)=adecK(EK,skPSM) in
+    (* event PSMGotK1(PSM,K1); *)
+    let EFH=senc(firsthalf,K1) in
+    
+(*5*)
+    event PSMfinish2(PSM,K1);
+    event PSMfinish(PSM,firsthalf);
+    out(AlicePSM,EFH).
+ 
+let processPSS(PSS:host,certIssuer:bitstring)=
+
+    in(AlicePSS,=atShop);
+
+(*Step 7*)
+    event PSSbegin(PSS,certIssuer); 
+    out(AlicePSS,certIssuer);
+
+(*Step 9-10*)
+    in (AlicePSS,(M1:bitstring,M2:bitstring));
+    event PSSM1M2(PSS,(M1,M2));
+    out(IssuerPSS,(M1,M2));
+
+(*Step 12-13*)
+    in (IssuerPSS,(=M1,=M2,M3:bitstring));
+    event PSSfinish2(PSS,(M3));
+    event PSSfinish(PSS,(M1,M2));
+    out(AlicePSS,M3).
+ 
+
+ let processShop(Shop:host)=
+ 
+    in(IssuerShop,H_Ecoupon:bitstring);
+(*Step 15*)
+    in(AliceShop,Ecoupon_rec:bitstring);
+    event ShopReceiveEcoupon(Shop,Ecoupon_rec);
+
+(*Step 16*)
+    if H_Ecoupon=Hash(Ecoupon_rec) then
+    event ShopSuccess(Shop,Discount);
+
+(*Step 17*)
+    event ShopFinish(Shop,Ecoupon_rec);
+    out(AliceShop,(Ecoupon_rec,Discount)).
+     
+process
+    new skCA:sskey; let pkCA=spk(skCA) in
+!(
+
+    new Issuer:host; new Alice:host; new PSM:host; new PSS:host; new Shop:host;
+    new skI:skey; let pkI=pk(skI) in
+    new skPSM:skey; let pkPSM=pk(skPSM) in
+  
+    let certIssuer=makecert(Issuer,pkI,skCA) in
+    let certPSM=makecert(PSM,pkPSM,skCA) in
+
+    new firsthalf1:bitstring; new secondhalf:bitstring; 
+    new firsthalf2:bitstring; 
+    (* new secondhalf2:bitstring; *)
+
+    !processIssuer(Issuer,skI,certIssuer,choice[firsthalf1,firsthalf2],secondhalf)| !processIssuer(Issuer,skI,certIssuer,choice[firsthalf1,firsthalf2],secondhalf)|   
+    !processPSM(PSM,skPSM,certPSM) | !processPSS(PSS,certIssuer) | !processShop(Shop) | !processAlice(Alice,pkCA)
+
+    (* !processIssuer(Issuer,skI,certIssuer,firsthalf1,secondhalf1)| !processIssuer(Issuer,skI,certIssuer,firsthalf2,secondhalf2)|   
+    !processPSM(PSM,skPSM,certPSM) | !processPSS(PSS,certIssuer) | !processShop(Shop) | !processAlice(Alice,pkCA) *)
+
+
+(*parcalari gondert*)
+
+
+
+
+
+
+
+
+
+
+
+
+)
+
+
+  
+   
